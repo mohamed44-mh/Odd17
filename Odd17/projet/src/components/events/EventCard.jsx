@@ -14,11 +14,10 @@ export default function EventCard({ event }) {
       year: 'numeric',
     });
   };
-
   return (
     <div className="bg-white rounded-2xl shadow-soft hover:shadow-soft-lg border border-slate-100 overflow-hidden flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1">
       <div>
-        {/* Image de bannière */}
+
         <div className="relative h-48 w-full overflow-hidden bg-slate-100">
           <img
             src={event.banner_image || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80'}

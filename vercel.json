@@ -1,0 +1,11 @@
+{
+  "buildCommand": "cd Odd17/projet && npm install && npm run build",
+  "outputDirectory": "Odd17/projet/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
