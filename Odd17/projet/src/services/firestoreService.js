@@ -242,3 +242,4 @@ export async function seedFirestoreIfEmpty() {
     console.error("Erreur initialisation Firestore seed:", err);
   }
 }
+

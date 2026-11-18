@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginApi, registerApi, logoutApi, getUserApi } from '../api/authApi';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
+import { loginApi, registerApi, logoutApi } from '../api/authApi';
 
 const AuthContext = createContext(null);
 
@@ -9,7 +12,7 @@ export function AuthProvider({ children }) {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('token') || null);
-  const [authLoading, setAuthLoading] = useState(true); // État global pour éviter le flash de la page login
+  const [authLoading, setAuthLoading] = useState(true);
   const [error, setError] = useState(null);
 
   /**
@@ -31,32 +34,42 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Vérification de la session au démarrage
+   * Écoute en temps réel de l'état d'authentification Firebase
    */
   useEffect(() => {
-    const initAuth = async () => {
-      const storedToken = localStorage.getItem('token');
-      if (!storedToken) {
-        setAuthLoading(false);
-        return;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDocSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userData = userDocSnap.exists()
+            ? { id: firebaseUser.uid, ...userDocSnap.data() }
+            : {
+                id: firebaseUser.uid,
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || firebaseUser.email,
+                email: firebaseUser.email,
+                role: 'volunteer',
+              };
+          const t = await firebaseUser.getIdToken();
+          setUser(userData);
+          setToken(t);
+          localStorage.setItem('user', JSON.stringify(userData));
+          localStorage.setItem('token', t);
+        } catch (err) {
+          console.warn('Session refresh error:', err);
+        }
+      } else {
+        const storedUser = localStorage.getItem('user');
+        const storedToken = localStorage.getItem('token');
+        if (!storedUser || !storedToken) {
+          setUser(null);
+          setToken(null);
+        }
       }
+      setAuthLoading(false);
+    });
 
-      try {
-        const response = await getUserApi();
-        setUser(response.user);
-        localStorage.setItem('user', JSON.stringify(response.user));
-      } catch (err) {
-        console.error('Session invalide ou expirée:', err);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setUser(null);
-        setToken(null);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    initAuth();
+    return () => unsubscribe();
   }, []);
 
   /**
@@ -72,7 +85,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       return data.user;
     } catch (err) {
-      const msg = err.response?.data?.message || 'Erreur lors de la connexion.';
+      const msg = err.response?.data?.message || err.message || 'Erreur lors de la connexion.';
       setError(msg);
       throw err;
     }
@@ -91,7 +104,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       return data.user;
     } catch (err) {
-      const msg = err.response?.data?.message || 'Erreur lors de l\'inscription.';
+      const msg = err.response?.data?.message || err.message || "Erreur lors de l'inscription.";
       setError(msg);
       throw err;
     }
@@ -102,11 +115,9 @@ export function AuthProvider({ children }) {
    */
   const logout = async () => {
     try {
-      if (token) {
-        await logoutApi();
-      }
+      await logoutApi();
     } catch (err) {
-      console.warn('Erreur lors de la déconnexion sur le serveur:', err);
+      console.warn('Erreur lors de la déconnexion Firebase:', err);
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -133,7 +144,7 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth doit être utilisé à l\'intérieur d\'un AuthProvider');
+    throw new Error("useAuth doit être utilisé à l'intérieur d'un AuthProvider");
   }
   return context;
 }
