@@ -451,7 +451,21 @@ export const getEvent = async (idOrSlug) => {
       } catch (_) {}
     }
 
-    // 3. Recherche dans DEFAULT_EVENTS (correspondance exacte ou partielle)
+    // 3. Chercher d'abord dans le cache local (qui contient les modifications récentes de l'utilisateur)
+    if (!eventDoc) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('ep_events_cache') || '[]');
+        const found = cached.find(
+          (e) => String(e.slug) === searchKey || String(e.id) === searchKey
+        );
+        if (found) {
+          eventDoc = found;
+          eventId = found.slug || found.id;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Recherche dans DEFAULT_EVENTS
     if (!eventDoc) {
       const fallback = DEFAULT_EVENTS.find(
         (e) =>
@@ -464,20 +478,6 @@ export const getEvent = async (idOrSlug) => {
         eventDoc = fallback;
         eventId = fallback.slug;
       }
-    }
-
-    // 4. Si toujours pas trouvé, chercher dans le cache local
-    if (!eventDoc) {
-      try {
-        const cached = JSON.parse(localStorage.getItem('ep_events_cache') || '[]');
-        const found = cached.find(
-          (e) => String(e.slug) === searchKey || String(e.id) === searchKey
-        );
-        if (found) {
-          eventDoc = found;
-          eventId = found.slug || found.id;
-        }
-      } catch (_) {}
     }
 
     // 5. Fallback garanti : premier événement par défaut

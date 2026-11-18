@@ -210,7 +210,7 @@ export const DEFAULT_EVENTS = [
     end_date: "2026-12-14 13:30:00",
     registration_deadline: "2026-12-13 18:00:00",
     max_volunteers: 30,
-    banner_image: "https://images.unsplash.com/photo-1618477388954-7852f32655ec?auto=format&fit=crop&w=1200&q=80",
+    banner_image: "https://6afe1de142acc5ca7b2ceae2.imgix.net/sandbox/Plage-Tamaris1-Dar-Bouazza.-.jpg",
     needs: [
       { id: "n1", type: "volunteer_skill", title: "Bénévoles ramassage et tri citoyen (ouvert à tous)", target_quantity: 25, unit: "personnes" },
       { id: "n2", type: "material", title: "Gants de protection et pinces de ramassage", target_quantity: 50, unit: "unités" },
@@ -343,6 +343,11 @@ export const DEFAULT_EVENTS = [
  */
 export async function seedFirestoreIfEmpty() {
   try {
+    // 0. Si le seed initial a déjà été effectué, ne jamais écraser les modifications des événements
+    if (localStorage.getItem("ep_firestore_seeded_v1")) {
+      return;
+    }
+
     // 1. Initialisation des comptes utilisateurs si absents
     for (const acc of DEFAULT_ACCOUNTS) {
       try {
@@ -351,33 +356,33 @@ export async function seedFirestoreIfEmpty() {
       } catch (_) { }
     }
 
-    // 2. Toujours s'assurer que les 7 événements ODD 17 existent dans Firestore
+    // 2. Initialiser les événements uniquement s'ils n'existent pas encore
     for (let i = 0; i < DEFAULT_EVENTS.length; i++) {
       const evt = DEFAULT_EVENTS[i];
       try {
-        await setDoc(
-          doc(db, EVENTS_COLLECTION, evt.slug),
-          {
+        const evtRef = doc(db, EVENTS_COLLECTION, evt.slug);
+        const evtSnap = await getDoc(evtRef);
+        if (!evtSnap.exists()) {
+          await setDoc(evtRef, {
             ...evt,
             status: "published",
-            accepted_participations_count: 0,
-            accepted_partnerships_count: 0,
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          },
-          { merge: true }
-        );
+          });
+        }
       } catch (errEvt) {
         console.warn("Avertissement insertion event:", evt.slug, errEvt);
       }
     }
 
-    // Sauvegarde en cache local pour accès instantané
+    // Initialiser le cache local seulement s'il est vide
     try {
-      localStorage.setItem("ep_events_cache", JSON.stringify(DEFAULT_EVENTS));
+      if (!localStorage.getItem("ep_events_cache")) {
+        localStorage.setItem("ep_events_cache", JSON.stringify(DEFAULT_EVENTS));
+      }
+      localStorage.setItem("ep_firestore_seeded_v1", "true");
     } catch (_) { }
 
-    console.log("✅ Seed complet : 7 événements ODD 17 prêts dans Firestore & local !");
+    console.log("✅ Seed initial prêt !");
   } catch (err) {
     console.error("Erreur initialisation Firestore seed:", err);
   }
