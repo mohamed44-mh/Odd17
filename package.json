@@ -6,3 +6,4 @@
     "build": "cd Odd17/projet && npm install && npm run build"
   }
 }
+
