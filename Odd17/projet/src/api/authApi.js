@@ -124,94 +124,80 @@ export const registerApi = async (userData) => {
 };
 
 /**
- * Connexion ultra-robuste : Firebase Auth -> Comptes prédéfinis -> Store local -> Firestore
- * Ne bloque JAMAIS l'utilisateur.
+ * Connexion sécurisée : Seuls les utilisateurs avec un email et mot de passe valides
+ * enregistrés dans Firebase / Base de données sont autorisés.
  */
 export const loginApi = async (credentials) => {
   const inputEmail = (credentials.email || '').trim().toLowerCase();
+  const inputPassword = credentials.password || '';
 
-  // 1. Comptes démo & associations prédéfinies du projet
-  const defaultAcc = DEFAULT_ACCOUNTS.find(
-    (a) => a.email.toLowerCase() === inputEmail
-  );
-  if (defaultAcc) {
-    return {
-      message: 'Connexion réussie !',
-      token: 'token_demo_' + defaultAcc.id,
-      user: defaultAcc,
-    };
+  if (!inputEmail || !inputPassword) {
+    throw new Error('Veuillez renseigner votre e-mail et votre mot de passe.');
   }
 
-  // 2. Vérification dans le registre des utilisateurs créés localement
-  try {
-    const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
-    const foundLocal = localUsers.find(
-      (u) => (u.email || '').toLowerCase() === inputEmail
-    );
-    if (foundLocal) {
-      return {
-        message: 'Connexion réussie !',
-        token: foundLocal.token || 'token_' + foundLocal.id,
-        user: foundLocal,
-      };
-    }
-
-    // Utilisateur courant en session
-    const lastStored = JSON.parse(localStorage.getItem('user') || 'null');
-    if (lastStored && (lastStored.email || '').toLowerCase() === inputEmail) {
-      return {
-        message: 'Connexion réussie !',
-        token: 'token_' + (lastStored.id || Date.now()),
-        user: lastStored,
-      };
-    }
-  } catch (_) {}
-
-  // 3. Tentative Firebase Auth standard
+  // 1. Authentification stricte via Firebase Auth
   try {
     const userCredential = await signInWithEmailAndPassword(
       auth,
-      credentials.email,
+      credentials.email.trim(),
       credentials.password
     );
     const firebaseUser = userCredential.user;
     const uid = firebaseUser.uid;
     const token = await firebaseUser.getIdToken();
 
+    // Récupérer le profil depuis Firestore
     let userProfile = null;
     try {
       const userDocSnap = await getDoc(doc(db, 'users', uid));
       if (userDocSnap.exists()) {
-        userProfile = { id: uid, ...userDocSnap.data() };
+        userProfile = { id: uid, uid, ...userDocSnap.data() };
       }
     } catch (_) {}
 
+    // Si pas encore dans la collection 'users', chercher par e-mail
+    if (!userProfile) {
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          userProfile = { id: docSnap.id, uid, ...docSnap.data() };
+        }
+      } catch (_) {}
+    }
+
+    // Si le compte est un compte pré-configuré
     if (!userProfile) {
       const defaultInfo = DEFAULT_ACCOUNTS.find((a) => a.email.toLowerCase() === inputEmail);
       if (defaultInfo) {
         userProfile = {
           ...defaultInfo,
           id: uid,
-          uid: uid,
+          uid,
         };
       } else {
-        const isEnterprise = inputEmail.includes('greentech') || inputEmail.includes('atlas') || inputEmail.includes('sahara') || inputEmail.includes('entrep') || inputEmail.includes('tech');
-        const isAdmin = inputEmail.includes('admin');
-        const isVolunteer = inputEmail.includes('benevole');
-        const role = isAdmin ? 'admin' : (isEnterprise ? 'enterprise' : (isVolunteer ? 'volunteer' : 'association'));
-        const cleanName = inputEmail.split('@')[0].replace(/[._0-9]/g, ' ').trim() || 'Utilisateur';
-
         userProfile = {
           id: uid,
-          uid: uid,
-          name: firebaseUser?.displayName || cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-          email: firebaseUser?.email || credentials.email,
-          role,
-          organization_name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+          uid,
+          name: firebaseUser.displayName || inputEmail.split('@')[0],
+          email: firebaseUser.email,
+          role: 'volunteer',
           city: 'Casablanca',
           status: 'active',
         };
       }
+      try {
+        await setDoc(doc(db, 'users', uid), userProfile, { merge: true });
+      } catch (_) {}
+    }
+
+    // Vérifier si le compte est actif
+    if (userProfile.status === 'suspended') {
+      await signOut(auth);
+      const err = new Error('Votre compte est suspendu. Veuillez contacter l\'administrateur.');
+      err.response = { status: 403, data: { message: err.message } };
+      throw err;
     }
 
     return {
@@ -220,57 +206,68 @@ export const loginApi = async (credentials) => {
       user: userProfile,
     };
   } catch (authErr) {
-    console.warn("Bascule de connexion Firestore/Local pour :", credentials.email);
+    // Si c'est déjà une interdiction de compte suspendu
+    if (authErr.response?.status === 403) {
+      throw authErr;
+    }
 
-    // 4. Recherche dans Firestore direct
+    // Si Firebase Auth rejette les identifiants (mot de passe faux ou email inexistant)
+    if (
+      authErr.code === 'auth/wrong-password' ||
+      authErr.code === 'auth/invalid-credential' ||
+      authErr.code === 'auth/user-not-found' ||
+      authErr.code === 'auth/invalid-email'
+    ) {
+      // Vérifier si le compte a été créé hors-ligne avec mot de passe stocké
+      try {
+        const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
+        const found = localUsers.find(
+          (u) => (u.email || '').toLowerCase() === inputEmail
+        );
+        if (found && found.password && found.password === inputPassword) {
+          if (found.status === 'suspended') {
+            const err = new Error('Votre compte est suspendu. Veuillez contacter l\'administrateur.');
+            err.response = { status: 403, data: { message: err.message } };
+            throw err;
+          }
+          return {
+            message: 'Connexion réussie !',
+            token: found.token || 'token_' + found.id,
+            user: found,
+          };
+        }
+      } catch (_) {}
+
+      // Identifiants invalides -> REJET STRICT !
+      const err = new Error('Adresse e-mail ou mot de passe incorrect.');
+      err.response = { status: 401, data: { message: err.message } };
+      throw err;
+    }
+
+    if (authErr.code === 'auth/too-many-requests') {
+      throw new Error('Trop de tentatives infructueuses. Veuillez réessayer plus tard.');
+    }
+
+    // Pour toute autre erreur réseau ou inconnue, tenter validation mot de passe store local
     try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', credentials.email));
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        const docSnap = snapshot.docs[0];
-        const userProfile = { id: docSnap.id, ...docSnap.data() };
+      const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
+      const found = localUsers.find(
+        (u) => (u.email || '').toLowerCase() === inputEmail
+      );
+      if (found && found.password && found.password === inputPassword) {
         return {
           message: 'Connexion réussie !',
-          token: 'token_fs_' + docSnap.id,
-          user: userProfile,
+          token: found.token || 'token_' + found.id,
+          user: found,
         };
       }
     } catch (_) {}
 
-    // 5. Compte de session automatique pour que l'accès ne soit jamais refusé
-    const defaultInfo = DEFAULT_ACCOUNTS.find((a) => a.email.toLowerCase() === inputEmail);
-    const isEnterprise = inputEmail.includes('greentech') || inputEmail.includes('atlas') || inputEmail.includes('sahara') || inputEmail.includes('entrep') || inputEmail.includes('tech');
-    const isAdmin = inputEmail.includes('admin');
-    const isVolunteer = inputEmail.includes('benevole');
-    const role = defaultInfo?.role || (isAdmin ? 'admin' : (isEnterprise ? 'enterprise' : (isVolunteer ? 'volunteer' : 'association')));
-
-    const cleanName = defaultInfo?.name || inputEmail.split('@')[0].replace(/[._0-9]/g, ' ').trim() || 'Utilisateur';
-    const autoUser = {
-      id: defaultInfo?.id || ('user_' + btoa(inputEmail).replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)),
-      uid: defaultInfo?.uid || ('user_' + btoa(inputEmail).replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)),
-      name: cleanName,
-      email: credentials.email,
-      role,
-      organization_name: defaultInfo?.organization_name || (cleanName.charAt(0).toUpperCase() + cleanName.slice(1)),
-      city: defaultInfo?.city || 'Casablanca',
-      phone: defaultInfo?.phone || '',
-      status: 'active',
-      created_at: new Date().toISOString(),
-    };
-
-    try {
-      const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
-      localUsers.push(autoUser);
-      localStorage.setItem('ep_users_store', JSON.stringify(localUsers));
-      setDoc(doc(db, 'users', autoUser.id), autoUser).catch(() => {});
-    } catch (_) {}
-
-    return {
-      message: 'Connexion réussie !',
-      token: 'token_auto_' + autoUser.id,
-      user: autoUser,
-    };
+    // Par défaut : rejeter toute tentative avec mot de passe incorrect
+    const message = mapFirebaseError(authErr);
+    const err = new Error(message);
+    err.response = { status: 401, data: { message } };
+    throw err;
   }
 };
 

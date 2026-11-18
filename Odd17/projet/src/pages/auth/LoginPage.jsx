@@ -58,13 +58,9 @@ export default function LoginPage() {
       navigate(destination, { replace: true });
     } catch (err) {
       const msg = err.response?.data?.message || err.message || '';
-      // Ne JAMAIS afficher les erreurs Firebase Auth configuration
-      if (msg.includes('configuration-not-found') || msg.includes('auth/') || msg.includes('Firebase')) {
-        // Silencieux — le fallback loginApi gère déjà la connexion
-        console.warn('Auth fallback actif:', msg);
-      } else if (err.response?.status === 403) {
+      if (err.response?.status === 403) {
         setErrorMessage('Accès refusé : ce compte est suspendu.');
-      } else if (err.response?.status === 401) {
+      } else if (err.response?.status === 401 || msg.includes('incorrect') || msg.includes('mot de passe')) {
         setErrorMessage('Adresse e-mail ou mot de passe incorrect.');
       } else {
         setErrorMessage(msg || 'Erreur lors de la connexion.');
