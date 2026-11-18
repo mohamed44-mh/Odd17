@@ -135,7 +135,7 @@ export const loginApi = async (credentials) => {
     throw new Error('Veuillez renseigner votre e-mail et votre mot de passe.');
   }
 
-  // 1. Authentification stricte via Firebase Auth
+  // 1. Authentification via Firebase Auth
   try {
     const userCredential = await signInWithEmailAndPassword(
       auth,
@@ -167,7 +167,7 @@ export const loginApi = async (credentials) => {
       } catch (_) {}
     }
 
-    // Si le compte est un compte pré-configuré
+    // Si le compte est un compte officiel (Association / Entreprise / Admin)
     if (!userProfile) {
       const defaultInfo = DEFAULT_ACCOUNTS.find((a) => a.email.toLowerCase() === inputEmail);
       if (defaultInfo) {
@@ -206,25 +206,43 @@ export const loginApi = async (credentials) => {
       user: userProfile,
     };
   } catch (authErr) {
-    // Si c'est déjà une interdiction de compte suspendu
     if (authErr.response?.status === 403) {
       throw authErr;
     }
 
-    // Si Firebase Auth rejette les identifiants (mot de passe faux ou email inexistant)
-    if (
-      authErr.code === 'auth/wrong-password' ||
-      authErr.code === 'auth/invalid-credential' ||
-      authErr.code === 'auth/user-not-found' ||
-      authErr.code === 'auth/invalid-email'
-    ) {
-      // Vérifier si le compte a été créé hors-ligne avec mot de passe stocké
+    // 2. Gestion des comptes créés / prédéfinis (Associations, Entreprises, Admin)
+    const defaultAcc = DEFAULT_ACCOUNTS.find(
+      (a) => a.email.toLowerCase() === inputEmail
+    );
+    if (defaultAcc) {
+      // VÉRIFICATION STRICTE DU MOT DE PASSE :
+      // Le mot de passe doit correspondre exactement au mot de passe du compte (ex: Assoc@2024! ou Entrep@2024! ou Admin@2024!)
+      if (defaultAcc.password && defaultAcc.password !== inputPassword) {
+        const err = new Error('Adresse e-mail ou mot de passe incorrect.');
+        err.response = { status: 401, data: { message: err.message } };
+        throw err;
+      }
+
+      // Synchronisation automatique dans Firebase Auth pour lier le compte
       try {
-        const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
-        const found = localUsers.find(
-          (u) => (u.email || '').toLowerCase() === inputEmail
-        );
-        if (found && found.password && found.password === inputPassword) {
+        await createUserWithEmailAndPassword(auth, credentials.email.trim(), credentials.password);
+      } catch (_) {}
+
+      return {
+        message: 'Connexion réussie !',
+        token: 'token_account_' + defaultAcc.id,
+        user: defaultAcc,
+      };
+    }
+
+    // 3. Vérification des comptes enregistrés localement
+    try {
+      const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
+      const found = localUsers.find(
+        (u) => (u.email || '').toLowerCase() === inputEmail
+      );
+      if (found) {
+        if (found.password && found.password === inputPassword) {
           if (found.status === 'suspended') {
             const err = new Error('Votre compte est suspendu. Veuillez contacter l\'administrateur.');
             err.response = { status: 403, data: { message: err.message } };
@@ -235,38 +253,42 @@ export const loginApi = async (credentials) => {
             token: found.token || 'token_' + found.id,
             user: found,
           };
+        } else {
+          // Mauvais mot de passe -> REJET STRICT
+          const err = new Error('Adresse e-mail ou mot de passe incorrect.');
+          err.response = { status: 401, data: { message: err.message } };
+          throw err;
         }
-      } catch (_) {}
+      }
+    } catch (_) {}
 
-      // Identifiants invalides -> REJET STRICT !
-      const err = new Error('Adresse e-mail ou mot de passe incorrect.');
-      err.response = { status: 401, data: { message: err.message } };
-      throw err;
-    }
+    // 4. Recherche dans Firestore si le compte y existe
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', credentials.email.trim()));
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        const docSnap = snapshot.docs[0];
+        const userProfile = { id: docSnap.id, ...docSnap.data() };
+        // Si mot de passe défini dans Firestore, le vérifier STRICTEMENT
+        if (userProfile.password && userProfile.password === inputPassword) {
+          return {
+            message: 'Connexion réussie !',
+            token: 'token_fs_' + docSnap.id,
+            user: userProfile,
+          };
+        }
+      }
+    } catch (_) {}
 
     if (authErr.code === 'auth/too-many-requests') {
       throw new Error('Trop de tentatives infructueuses. Veuillez réessayer plus tard.');
     }
 
-    // Pour toute autre erreur réseau ou inconnue, tenter validation mot de passe store local
-    try {
-      const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
-      const found = localUsers.find(
-        (u) => (u.email || '').toLowerCase() === inputEmail
-      );
-      if (found && found.password && found.password === inputPassword) {
-        return {
-          message: 'Connexion réussie !',
-          token: found.token || 'token_' + found.id,
-          user: found,
-        };
-      }
-    } catch (_) {}
-
-    // Par défaut : rejeter toute tentative avec mot de passe incorrect
+    // 5. Rejet strict si le compte n'existe nulle part ou mot de passe erroné
     const message = mapFirebaseError(authErr);
-    const err = new Error(message);
-    err.response = { status: 401, data: { message } };
+    const err = new Error(message || 'Adresse e-mail ou mot de passe incorrect.');
+    err.response = { status: 401, data: { message: err.message } };
     throw err;
   }
 };
