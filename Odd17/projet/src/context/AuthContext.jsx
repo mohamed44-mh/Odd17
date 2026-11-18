@@ -1,15 +1,34 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
-import { loginApi, registerApi, logoutApi } from '../api/authApi';
+import { auth, db } from '../config/firebase.js';
+import { loginApi, registerApi, logoutApi } from '../api/authApi.js';
+import { DEFAULT_ACCOUNTS } from '../services/firestoreService.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    if (!savedUser) return null;
+    try {
+      const parsed = JSON.parse(savedUser);
+      if (parsed && parsed.email) {
+        const emailLower = parsed.email.toLowerCase();
+        // Vérification stricte par email uniquement pour les comptes de test officiels
+        const found = (DEFAULT_ACCOUNTS || []).find(
+          (a) => a.email.toLowerCase() === emailLower
+        );
+        if (found) {
+          const merged = { ...found, ...parsed, id: parsed.id || found.id, uid: parsed.uid || found.uid };
+          localStorage.setItem('user', JSON.stringify(merged));
+          return merged;
+        }
+      }
+      return parsed;
+    } catch (_) {
+      return null;
+    }
   });
   const [token, setToken] = useState(() => localStorage.getItem('token') || null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -19,18 +38,40 @@ export function AuthProvider({ children }) {
    * Calcule l'URL du dashboard selon le rôle de l'utilisateur
    */
   const getRoleDashboard = useCallback((userObj) => {
-    if (!userObj || !userObj.role) return '/';
-    switch (userObj.role) {
-      case 'admin':
-        return '/dashboard/admin';
-      case 'association':
-        return '/dashboard/association';
-      case 'enterprise':
-        return '/dashboard/enterprise';
-      case 'volunteer':
-      default:
-        return '/dashboard/volunteer';
+    if (!userObj) return '/';
+    const role = (userObj.role || '').toLowerCase();
+    const email = (userObj.email || '').toLowerCase();
+    const name = (userObj.organization_name || userObj.name || '').toLowerCase();
+
+    if (role === 'admin' || email.includes('admin') || name.includes('admin')) {
+      return '/dashboard/admin';
     }
+    if (
+      role === 'association' ||
+      email.includes('aljisr') ||
+      name.includes('aljisr') ||
+      name.includes('al jisr') ||
+      name.includes('fondation') ||
+      email.includes('fmv') ||
+      email.includes('fmps') ||
+      email.includes('enactus') ||
+      email.includes('amee') ||
+      email.includes('alamal') ||
+      email.includes('foret')
+    ) {
+      return '/dashboard/association';
+    }
+    if (
+      role === 'enterprise' ||
+      email.includes('greentech') ||
+      name.includes('greentech') ||
+      email.includes('atlas') ||
+      email.includes('sahara') ||
+      email.includes('entrep')
+    ) {
+      return '/dashboard/enterprise';
+    }
+    return '/dashboard/volunteer';
   }, []);
 
   /**
@@ -40,16 +81,70 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const userDocSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const userData = userDocSnap.exists()
-            ? { id: firebaseUser.uid, ...userDocSnap.data() }
-            : {
-                id: firebaseUser.uid,
-                uid: firebaseUser.uid,
-                name: firebaseUser.displayName || firebaseUser.email,
-                email: firebaseUser.email,
-                role: 'volunteer',
-              };
+          const userEmail = (firebaseUser.email || '').toLowerCase();
+          const defaultInfo = (DEFAULT_ACCOUNTS || []).find((a) => a.email.toLowerCase() === userEmail);
+
+          let userData = null;
+
+          // 1. Priorité absolue aux comptes officiels (Association, Entreprise, Admin)
+          if (defaultInfo) {
+            userData = {
+              ...defaultInfo,
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+            };
+          }
+
+          // 2. Recherche dans Firestore si disponible
+          if (!userData) {
+            try {
+              const userDocSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+              if (userDocSnap.exists()) {
+                userData = { id: firebaseUser.uid, ...userDocSnap.data() };
+              }
+            } catch (_) {}
+          }
+
+          // 3. Recherche dans les utilisateurs inscrits en local
+          if (!userData) {
+            try {
+              const localUsers = JSON.parse(localStorage.getItem('ep_users_store') || '[]');
+              const found = localUsers.find((u) => (u.email || '').toLowerCase() === userEmail);
+              if (found) {
+                userData = { ...found, id: firebaseUser.uid, uid: firebaseUser.uid };
+              }
+            } catch (_) {}
+          }
+
+          // 4. Utiliser les données du profil stocké localement si l'email correspond
+          if (!userData) {
+            try {
+              const stored = JSON.parse(localStorage.getItem('user') || 'null');
+              if (stored && (stored.email || '').toLowerCase() === userEmail) {
+                userData = stored;
+              }
+            } catch (_) {}
+          }
+
+          // 5. Profil par défaut (Bénévole) pour nouvel utilisateur
+          if (!userData) {
+            const cleanName =
+              firebaseUser.displayName ||
+              userEmail.split('@')[0].replace(/[._0-9]/g, ' ').trim() ||
+              'Bénévole';
+
+            userData = {
+              id: firebaseUser.uid,
+              uid: firebaseUser.uid,
+              name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+              email: firebaseUser.email,
+              role: 'volunteer',
+              organization_name: '',
+              city: 'Casablanca',
+              status: 'active',
+            };
+          }
+
           const t = await firebaseUser.getIdToken();
           setUser(userData);
           setToken(t);

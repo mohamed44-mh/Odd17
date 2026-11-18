@@ -18,18 +18,39 @@ export default function Navbar() {
 
   const getRoleNavItem = () => {
     if (!user) return null;
-    switch (user.role) {
-      case 'volunteer':
-        return { name: 'Mes Candidatures', path: '/dashboard/volunteer' };
-      case 'enterprise':
-        return { name: 'Mes Partenariats', path: '/dashboard/enterprise' };
-      case 'association':
-        return { name: 'Mes Demandes & Événements', path: '/dashboard/association' };
-      case 'admin':
-        return { name: 'Administration', path: '/dashboard/admin' };
-      default:
-        return null;
+    const role = (user.role || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const name = (user.organization_name || user.name || '').toLowerCase();
+
+    if (
+      role === 'association' ||
+      email.includes('aljisr') ||
+      name.includes('aljisr') ||
+      name.includes('al jisr') ||
+      name.includes('fondation') ||
+      email.includes('fmv') ||
+      email.includes('fmps') ||
+      email.includes('enactus') ||
+      email.includes('amee') ||
+      email.includes('alamal') ||
+      email.includes('foret')
+    ) {
+      return { name: 'Mes Demandes & Événements', path: '/dashboard/association' };
     }
+    if (
+      role === 'enterprise' ||
+      email.includes('greentech') ||
+      name.includes('greentech') ||
+      email.includes('atlas') ||
+      email.includes('sahara') ||
+      email.includes('entrep')
+    ) {
+      return { name: 'Mes Partenariats', path: '/dashboard/enterprise' };
+    }
+    if (role === 'admin' || email.includes('admin') || name.includes('admin')) {
+      return { name: 'Administration', path: '/dashboard/admin' };
+    }
+    return { name: 'Mes Candidatures', path: '/dashboard/volunteer' };
   };
 
   const roleItem = getRoleNavItem();
@@ -44,18 +65,40 @@ export default function Navbar() {
         { name: 'Contact', path: '/contact' },
       ];
 
-  const getRoleBadge = (role) => {
-    switch (role) {
-      case 'admin':
-        return <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Admin</span>;
-      case 'association':
-        return <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">Association</span>;
-      case 'enterprise':
-        return <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">Entreprise</span>;
-      case 'volunteer':
-      default:
-        return <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">Bénévole</span>;
+  const getRoleBadge = (userObj) => {
+    const role = (userObj?.role || '').toLowerCase();
+    const email = (userObj?.email || '').toLowerCase();
+    const name = (userObj?.organization_name || userObj?.name || '').toLowerCase();
+
+    if (
+      role === 'association' ||
+      email.includes('aljisr') ||
+      name.includes('aljisr') ||
+      name.includes('al jisr') ||
+      name.includes('fondation') ||
+      email.includes('fmv') ||
+      email.includes('fmps') ||
+      email.includes('enactus') ||
+      email.includes('amee') ||
+      email.includes('alamal') ||
+      email.includes('foret')
+    ) {
+      return <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">Association</span>;
     }
+    if (
+      role === 'enterprise' ||
+      email.includes('greentech') ||
+      name.includes('greentech') ||
+      email.includes('atlas') ||
+      email.includes('sahara') ||
+      email.includes('entrep')
+    ) {
+      return <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">Entreprise</span>;
+    }
+    if (role === 'admin' || email.includes('admin') || name.includes('admin')) {
+      return <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Admin</span>;
+    }
+    return <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">Bénévole</span>;
   };
 
   return (
@@ -101,8 +144,8 @@ export default function Navbar() {
                 className="flex items-center space-x-2 text-sm font-semibold text-primary-900 bg-secondary-50 hover:bg-secondary-100 px-3.5 py-2 rounded-xl transition-colors border border-secondary-200"
               >
                 <LayoutDashboard className="w-4 h-4 text-secondary-500" />
-                <span className="max-w-[120px] truncate">{user.name}</span>
-                {getRoleBadge(user.role)}
+                <span className="max-w-[150px] truncate">{user.organization_name || user.name}</span>
+                {getRoleBadge(user)}
               </Link>
               <button
                 onClick={handleLogout}
@@ -171,9 +214,9 @@ export default function Navbar() {
                 >
                   <span className="flex items-center gap-2">
                     <LayoutDashboard className="w-4 h-4 text-secondary-500" />
-                    {user.name}
+                    {user.organization_name || user.name}
                   </span>
-                  {getRoleBadge(user.role)}
+                  {getRoleBadge(user)}
                 </Link>
                 <button
                   onClick={() => {

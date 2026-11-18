@@ -303,7 +303,7 @@ export default function DashboardVolunteer() {
                       </div>
 
                       <h3 className="text-base font-extrabold text-primary-900 truncate">
-                        {event?.title || 'Événement solidaire'}
+                        {event?.title || p.event_title || 'Événement solidaire'}
                       </h3>
 
                       <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
@@ -313,16 +313,38 @@ export default function DashboardVolunteer() {
                             {event.location}
                           </span>
                         )}
-                        {event?.user?.organization_name && (
-                          <span className="font-medium text-slate-700">
-                            Par : {event.user.organization_name}
-                          </span>
-                        )}
+                        <span className="font-medium text-slate-700">
+                          Par : {event?.user?.organization_name || event?.organization_name || 'Association organisatrice'}
+                        </span>
                       </div>
 
                       {p.motivation && (
                         <div className="mt-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100/80 italic">
                           "{p.motivation}"
+                        </div>
+                      )}
+
+                      {/* Message clair et instantané sur la décision */}
+                      {p.status === 'accepted' && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span>
+                            <strong>Félicitations !</strong> Votre candidature a été <strong>validée</strong> par l'association organisatrice. Rendez-vous sur place le jour de l'événement !
+                          </span>
+                        </div>
+                      )}
+                      {p.status === 'rejected' && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+                          <XCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                          <span>
+                            L'association organisatrice n'a pas pu retenir votre candidature pour cette session (places limitées). Nous vous remercions pour votre esprit solidaire.
+                          </span>
+                        </div>
+                      )}
+                      {p.status === 'pending' && (
+                        <div className="mt-2.5 p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/80 text-[11px] text-amber-800 flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                          <span>Votre demande a été transmise avec vos coordonnées et est en cours d'examen par les organisateurs.</span>
                         </div>
                       )}
                     </div>

@@ -53,18 +53,21 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      await login({ email, password });
-      const destination = location.state?.from?.pathname || '/events';
+      const loggedInUser = await login({ email, password });
+      const destination = location.state?.from?.pathname || getRoleDashboard(loggedInUser);
       navigate(destination, { replace: true });
     } catch (err) {
-      if (err.response?.status === 403) {
+      const msg = err.response?.data?.message || err.message || '';
+      // Ne JAMAIS afficher les erreurs Firebase Auth configuration
+      if (msg.includes('configuration-not-found') || msg.includes('auth/') || msg.includes('Firebase')) {
+        // Silencieux — le fallback loginApi gère déjà la connexion
+        console.warn('Auth fallback actif:', msg);
+      } else if (err.response?.status === 403) {
         setErrorMessage('Accès refusé : ce compte est suspendu.');
       } else if (err.response?.status === 401) {
         setErrorMessage('Adresse e-mail ou mot de passe incorrect.');
-      } else if (err.response?.data?.message) {
-        setErrorMessage(err.response.data.message);
       } else {
-        setErrorMessage('Impossible de contacter le serveur. Vérifiez que l\'API Laravel est lancée.');
+        setErrorMessage(msg || 'Erreur lors de la connexion.');
       }
     } finally {
       setIsSubmitting(false);

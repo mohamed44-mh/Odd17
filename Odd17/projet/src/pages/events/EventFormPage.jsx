@@ -54,7 +54,15 @@ export default function EventFormPage() {
           const evt = evtRes.event;
 
           // Contrôle d'autorisation propriétaire ou admin
-          if (evt.user_id !== user?.id && user?.role !== 'admin') {
+          const isOwner =
+            user?.role === 'admin' ||
+            (user?.id && String(evt.user_id) === String(user.id)) ||
+            (user?.uid && String(evt.user_id) === String(user.uid)) ||
+            (user?.email && evt.user_email && user.email.toLowerCase() === evt.user_email.toLowerCase()) ||
+            (user?.organization_name && evt.organization_name && user.organization_name.toLowerCase().trim() === evt.organization_name.toLowerCase().trim()) ||
+            (user?.email && evt.user_id && user.email.toLowerCase().includes(String(evt.user_id).replace('user_', '')));
+
+          if (!isOwner) {
             alert("Action non autorisée : vous n'êtes pas l'organisateur de cet événement.");
             navigate('/events', { replace: true });
             return;
@@ -129,7 +137,7 @@ export default function EventFormPage() {
       updated[index] = { ...updated[index], [field]: value };
       // Ajustement automatique de l'unité selon le type
       if (field === 'type') {
-        if (value === 'financial') updated[index].unit = '€';
+        if (value === 'financial') updated[index].unit = 'DH';
         else if (value === 'volunteer_skill') updated[index].unit = 'personnes';
         else if (value === 'material') updated[index].unit = 'unités';
       }
@@ -145,8 +153,9 @@ export default function EventFormPage() {
 
     try {
       if (isEditMode) {
-        await updateEvent(id, formData);
-        navigate(`/events/${id}`);
+        const updateRes = await updateEvent(id, formData);
+        const redirectSlug = updateRes.event?.slug || updateRes.event?.id || id;
+        navigate(`/events/${redirectSlug}`);
       } else {
         const res = await createEvent(formData);
         navigate(`/events/${res.event.slug || res.event.id}`);
@@ -462,7 +471,7 @@ export default function EventFormPage() {
                             type="text"
                             value={need.unit}
                             onChange={(e) => handleNeedChange(idx, 'unit', e.target.value)}
-                            placeholder="ex: personnes, €"
+                            placeholder="ex: personnes, DH"
                             className="w-full px-2 py-1.5 text-xs rounded-lg border border-slate-300 bg-white"
                           />
                         </div>

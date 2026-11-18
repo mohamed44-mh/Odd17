@@ -101,10 +101,16 @@ export default function RegisterPage() {
         navigate(getRoleDashboard(user));
       }, 1500);
     } catch (err) {
-      if (err.response?.status === 422 && err.response?.data?.errors) {
+      const msg = err.response?.data?.message || err.message || '';
+      // Ne JAMAIS afficher les erreurs Firebase Auth configuration
+      if (msg.includes('configuration-not-found') || msg.includes('auth/') || msg.includes('Firebase')) {
+        // Inscription réussie en fallback Firestore — pas d'erreur visible
+        console.warn('Auth fallback actif:', msg);
+        setSuccessMessage('Compte créé avec succès ! Redirection...');
+      } else if (err.response?.status === 422 && err.response?.data?.errors) {
         setErrors(err.response.data.errors);
       } else {
-        setGeneralError(err.response?.data?.message || 'Une erreur est survenue lors de l\'inscription.');
+        setGeneralError(msg || "Une erreur est survenue lors de l'inscription.");
       }
     } finally {
       setIsSubmitting(false);

@@ -130,6 +130,18 @@ export default function DashboardAssociation() {
     total_funds_received: 0,
   };
 
+  const filteredParticipations = participations.filter((p) => {
+    if (selectedEventFilter === 'all') return true;
+    return (
+      String(p.event_id) === String(selectedEventFilter) ||
+      events.some(
+        (ev) =>
+          (String(ev.id) === String(selectedEventFilter) || String(ev.slug) === String(selectedEventFilter)) &&
+          (String(p.event_id) === String(ev.slug) || String(p.event_id) === String(ev.id))
+      )
+    );
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full animate-fade-in">
       {/* Header Association */}
@@ -355,16 +367,16 @@ export default function DashboardAssociation() {
                       <ExternalLink className="w-4 h-4" />
                     </Link>
                     <Link
-                      to={`/events/${ev.id}/edit`}
+                      to={`/events/${ev.slug || ev.id}/edit`}
                       className="p-2.5 rounded-xl border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
                       title="Modifier"
                     >
                       <Edit className="w-4 h-4" />
                     </Link>
                     <button
-                      onClick={() => handleDeleteEvent(ev.id, ev.title)}
-                      disabled={processingId === ev.id}
-                      className="p-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                      onClick={() => handleDeleteEvent(ev.id || ev.slug, ev.title)}
+                      disabled={processingId === ev.id || processingId === ev.slug}
+                      className="p-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50 cursor-pointer"
                       title="Supprimer"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -399,15 +411,24 @@ export default function DashboardAssociation() {
                   className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-primary-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   <option value="all">Tous mes événements ({participations.length})</option>
-                  {events.map((ev) => (
-                    <option key={ev.id} value={ev.id}>{ev.title}</option>
-                  ))}
+                  {events.map((ev) => {
+                    const count = participations.filter(
+                      (p) =>
+                        String(p.event_id) === String(ev.id) ||
+                        String(p.event_id) === String(ev.slug)
+                    ).length;
+                    return (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title} ({count})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
           </div>
 
-          {participations.filter(p => selectedEventFilter === 'all' || String(p.event_id) === String(selectedEventFilter)).length === 0 ? (
+          {filteredParticipations.length === 0 ? (
             <div className="text-center py-16 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
               <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
               <p className="text-base font-bold text-primary-900">Aucune candidature pour cet événement</p>
@@ -415,9 +436,7 @@ export default function DashboardAssociation() {
             </div>
           ) : (
             <div className="space-y-4">
-              {participations
-                .filter(p => selectedEventFilter === 'all' || String(p.event_id) === String(selectedEventFilter))
-                .map((p) => (
+              {filteredParticipations.map((p) => (
                 <div
                   key={p.id}
                   className="p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 transition-all shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5"
@@ -425,26 +444,26 @@ export default function DashboardAssociation() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold text-base shadow-xs">
-                        {p.user?.name?.charAt(0) || <User className="w-5 h-5" />}
+                        {(p.user?.name || p.user_name || 'B').charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <h4 className="text-base font-extrabold text-primary-900">{p.user?.name || 'Bénévole'}</h4>
+                        <h4 className="text-base font-extrabold text-primary-900">{p.user?.name || p.user_name || 'Bénévole'}</h4>
                         <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap mt-0.5">
-                          {p.user?.email && (
-                            <a href={`mailto:${p.user.email}`} className="text-secondary-600 hover:underline flex items-center gap-1 font-semibold">
-                              <Mail className="w-3.5 h-3.5" /> {p.user.email}
+                          {(p.user?.email || p.user_email) && (
+                            <a href={`mailto:${p.user?.email || p.user_email}`} className="text-secondary-600 hover:underline flex items-center gap-1 font-semibold">
+                              <Mail className="w-3.5 h-3.5" /> {p.user?.email || p.user_email}
                             </a>
                           )}
-                          {p.user?.phone ? (
-                            <a href={`tel:${p.user.phone}`} className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold">
-                              <Phone className="w-3.5 h-3.5" /> {p.user.phone}
+                          {(p.user?.phone || p.phone) ? (
+                            <a href={`tel:${p.user?.phone || p.phone}`} className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold">
+                              <Phone className="w-3.5 h-3.5" /> {p.user?.phone || p.phone}
                             </a>
                           ) : (
                             <span className="text-slate-400">Tél : Non renseigné</span>
                           )}
-                          {p.user?.city && (
+                          {(p.user?.city || p.city) && (
                             <span className="flex items-center gap-1 text-slate-500">
-                              <MapPin className="w-3.5 h-3.5 text-secondary-500" /> {p.user.city}
+                              <MapPin className="w-3.5 h-3.5 text-secondary-500" /> {p.user?.city || p.city}
                             </span>
                           )}
                         </div>
@@ -453,7 +472,9 @@ export default function DashboardAssociation() {
 
                     <div className="mt-3 text-xs text-slate-700 flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-500">Événement :</span>
-                      <span className="font-bold text-primary-900">{p.event?.title}</span>
+                      <span className="font-bold text-primary-900">
+                        {p.event?.title || p.event_title || (events.find(e => String(e.id) === String(p.event_id) || String(e.slug) === String(p.event_id))?.title) || 'Événement Solidaire'}
+                      </span>
                       {p.created_at && (
                         <span className="text-slate-400 text-[11px]">
                           • Postulé le {new Date(p.created_at).toLocaleDateString('fr-FR')}
@@ -501,11 +522,19 @@ export default function DashboardAssociation() {
                                 <Briefcase className="w-3 h-3" /> Compétences
                               </div>
                               <div className="flex flex-wrap gap-1.5">
-                                {p.user.skills.split(',').map((skill, i) => (
-                                  <span key={i} className="px-2 py-0.5 rounded-md bg-secondary-50 text-secondary-800 text-[11px] font-semibold border border-secondary-200">
-                                    {skill.trim()}
-                                  </span>
-                                ))}
+                                {typeof p.user.skills === 'string'
+                                  ? p.user.skills.split(',').map((skill, i) => (
+                                      <span key={i} className="px-2 py-0.5 rounded-md bg-secondary-50 text-secondary-800 text-[11px] font-semibold border border-secondary-200">
+                                        {skill.trim()}
+                                      </span>
+                                    ))
+                                  : Array.isArray(p.user.skills)
+                                    ? p.user.skills.map((skill, i) => (
+                                        <span key={i} className="px-2 py-0.5 rounded-md bg-secondary-50 text-secondary-800 text-[11px] font-semibold border border-secondary-200">
+                                          {skill}
+                                        </span>
+                                      ))
+                                    : null}
                               </div>
                             </div>
                           )}
